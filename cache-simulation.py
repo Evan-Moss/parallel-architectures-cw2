@@ -1,7 +1,8 @@
 from cache import Cache
-from stats import Stats
+from stats import Stats, AccessType
 from directory import Directory
 from os import path
+import sys
 
 
 def parse_line(l):
@@ -16,44 +17,66 @@ def parse_line(l):
 
     return l[0], l[1], int(l[2])
 
+
 def print_caches(cs):
     for k, c in cs.items():
         print('----{0}----\n'.format(k))
         print(c)
 
-no_processors = 4
-block_size = 4
-no_cache_blocks = 512
 
-stats = Stats()
-directory = Directory(no_cache_blocks, no_processors, stats)
+class Simulator:
+    def __init__(self, no_processors=4, block_size=4, no_cache_blocks=512):
+        self.no_processors = no_processors
+        self.block_size = block_size
+        self.no_cache_blocks = no_cache_blocks
+        self.stats = Stats()
+        self.directory = Directory(self.no_cache_blocks, self.no_processors, self.stats)
+        self.caches = {}
+        self.setup_caches()
 
-# Set up processors
-caches = {}
-for p in range(no_processors):
-    cache = Cache(p, block_size, no_cache_blocks, directory, stats)
-    caches['P{}'.format(p)] = cache
-    directory.connect_cache(cache)
+    def setup_caches(self):
+        for p in range(self.no_processors):
+            cache = Cache(p, self.block_size, self.no_cache_blocks, self.directory, self.stats)
+            self.caches['P{}'.format(p)] = cache
+            self.directory.connect_cache(cache)
 
-file = path.join('./cache-traces', 'trace-1.txt')
+    def run_simulation(self, file):
+        pth = path.join('./cache-traces', file)
+        with open(pth, 'r') as f:
+            for line in f:
+                p, action, mem = parse_line(line)
+                if action == 'R':
+                    self.caches[p].read(mem)
+                elif action == 'W':
+                    self.caches[p].write(mem)
+                elif action == 'v':
+                    # Full line by line explanation should be toggled
+                    self.stats.verbose = not self.stats.verbose
+                    self.directory.verbose = not self.directory.verbose
+                    for k, c in self.caches.items():
+                        c.verbose = not c.verbose
+                elif action == 'p':
+                    # Complete content of cache should be output in some suitable format
+                    print_caches(self.caches)
+                elif action == 'h':
+                    print("HIT RATE: {}".format(self.stats.hit_rate()))
+                else:
+                    raise Exception('Invalid line in trace file.')
+                if action in ['R', 'W']:
+                    self.stats.save_stats()
+                    self.stats.reset()
 
-with open(file) as f:
-    for line in f:
-        p, action, mem = parse_line(line)
-        if action == 'R':
-            caches[p].read(mem)
-        elif action == 'W':
-            caches[p].write(mem)
-        elif action == 'v':
-            # Full line by line explanation should be toggled
-            pass
-        elif action == 'p':
-            # Complete content of cache should be output in some suitable format
-            print_caches(caches)
-        elif action == 'h':
-            # Hit-rate achieved so far should be output
-            pass
-        else:
-            raise Exception('Invalid line in trace file.')
+        print(self.stats.final_stats(file, to_file=True))
 
 
+if __name__ == "__main__":
+    args = sys.argv[1:]
+
+    if len(args) < 1:
+        print("You must input a file name for the trace as the first arg.")
+        exit(1)
+
+    file = args[0]
+
+    s = Simulator()
+    s.run_simulation(file)

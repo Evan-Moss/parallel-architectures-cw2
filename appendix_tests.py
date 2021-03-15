@@ -10,13 +10,13 @@ class TestClass:
         block_size = 4
         no_cache_blocks = 512
 
-        self.stats = Stats()
-        self.directory = Directory(no_cache_blocks, no_processors, self.stats)
+        self.stats = Stats(verbose=True)
+        self.directory = Directory(no_cache_blocks, no_processors, self.stats, verbose=True)
 
         # Set up processors
         self.caches = {}
         for p in range(no_processors):
-            cache = Cache(p, block_size, no_cache_blocks, self.directory, self.stats)
+            cache = Cache(p, block_size, no_cache_blocks, self.directory, self.stats, verbose=True)
             self.caches['P{}'.format(p)] = cache
             self.directory.connect_cache(cache)
 
@@ -49,6 +49,7 @@ class TestClass:
         assert self.caches['P0'].cache_lines[0].state == CacheState.INVALID
 
         self.stats.reset()
+
         self.caches['P0'].write(1)
         assert self.stats.cycles == 29
 
