@@ -1,6 +1,6 @@
-from cache import Cache, CacheState
+from cache import Cache, CacheState, CacheLine
 from stats import Stats
-from directory import Directory
+from new_directory import Directory
 
 
 class TestClass:
@@ -149,3 +149,25 @@ class TestClass:
         self.stats.reset()
         self.caches['P0'].read(1)
         assert self.stats.cycles == 22
+
+    def test_equals(self):
+        a = CacheLine()
+        a.state = CacheState.MODIFIED
+        a.tag = 100
+
+        b = CacheLine()
+        b.state = CacheState.MODIFIED
+        b.tag = 100
+
+        assert(a.equals(b))
+
+    def test_not_equals(self):
+        a = CacheLine()
+        a.state = CacheState.MODIFIED
+        a.tag = 100
+
+        b = CacheLine()
+        b.state = CacheState.MODIFIED
+        b.tag = 200
+
+        assert(not a.equals(b))

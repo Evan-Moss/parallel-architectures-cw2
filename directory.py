@@ -1,13 +1,13 @@
-from cache import CacheState
+from cache import CacheState, CacheLine
 from stats import AccessType
 
 
 class Directory:
     # Class to represent the Directory, which keeps track of the cache lines in each processor.
     # The directory fetches from memory
-    def __init__(self, no_cache_blocks, no_processors, stats, verbose = False):
+    def __init__(self, no_cache_blocks, no_processors, stats, verbose=False):
         # Sets up the directory, each line holds the line state and the sharer vector.
-        self.lines = [[CacheState.INVALID, [0 for i in range(no_processors)]] for x in range(no_cache_blocks)]
+        self.lines = [[[CacheLine() for i in range(no_processors)], [0 for i in range(no_processors)]] for x in range(no_cache_blocks)]
         self.stats = stats
         self.connected_caches = []
         self.verbose = verbose
@@ -39,15 +39,15 @@ class Directory:
         distance = (4 + (requester - forwarder)) % 4
         return distance
 
-    def state_and_vector(self, index):
+    def cache_line_and_vector(self, index):
         self.stats.directory_access()
         line = self.lines[index]
-        line_state = line[0]
+        cache_line = line[0]
         sharer_vector = line[1]
-        return line_state, sharer_vector
+        return cache_line, sharer_vector
 
     def update_cache_line(self, index, state, sharer_vector_state):
-        self.lines[index][0] = state
+        self.lines[index][0].state = state
         self.lines[index][1] = sharer_vector_state
 
     def invalidate_processor(self, p, index):
@@ -58,9 +58,12 @@ class Directory:
         self.stats.access_type = AccessType.REMOTE
         self.stats.hop_between_processor_and_directory()
 
-        line_state, sharer_vector = self.state_and_vector(index)
+        line, sharer_vector = self.cache_line_and_vector(index)
+        print(line)
+        line_state = line.state
         if self.verbose:
             print("Line state: {}. Sharer vector: {}.".format(line_state, sharer_vector))
+
         if line_state == CacheState.SHARED or line_state == CacheState.MODIFIED:
             # Find closest P and ask it to send the data
 
@@ -137,7 +140,9 @@ class Directory:
 
         self.stats.access_type = AccessType.REMOTE
 
-        line_state, sharer_vector = self.state_and_vector(index)
+        line, sharer_vector = self.cache_line_and_vector(index)
+        print(line)
+        line_state = line.state
 
         num_other_sharers = sum(sharer_vector) - (sharer_vector[p_num])
 

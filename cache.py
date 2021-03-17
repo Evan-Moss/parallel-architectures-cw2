@@ -14,16 +14,21 @@ class CacheState(Enum):
 
 class CacheLine:
     # Representation of a single CacheLine to be stored in cache of processor.
-    def __init__(self):
-        self.state = CacheState.INVALID
-        self.tag = None
+    def __init__(self, state=CacheState.INVALID, tag=None):
+        self.state = state
+        self.tag = tag
 
     def reset(self):
         self.state = CacheState.INVALID
         self.tag = None
 
+    def equals(self, cache_line):
+        if cache_line.state == self.state and cache_line.tag == self.tag:
+            return True
+        return False
+
     def __str__(self):
-        return '{} {}'.format(self.tag, self.state)
+        return 'Tag: {}. State: {}.'.format(self.tag, self.state)
 
     def set_state(self, state):
         self.state = state
@@ -48,7 +53,7 @@ class Cache:
         st = ""
         for i, l in enumerate(self.cache_lines):
             if l.state != CacheState.INVALID:
-                st += '{} {}\n'.format(i, l)
+                st += 'Idx: {} {}\n'.format(i, l)
         return st
 
     def get_cache_line(self, index):

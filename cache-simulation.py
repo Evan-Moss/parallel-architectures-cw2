@@ -1,6 +1,6 @@
 from cache import Cache
 from stats import Stats, AccessType
-from directory import Directory
+from new_directory import Directory
 from os import path
 import sys
 
@@ -19,7 +19,7 @@ def parse_line(l):
 
 
 def print_caches(cs):
-    print('Idx, Tag, State')
+    # print('Idx, Tag, State')
     for k, c in cs.items():
         print('----{0}----\n'.format(k))
         print(c)
