@@ -147,6 +147,8 @@ class Cache:
         cache_line.state = CacheState.MODIFIED
         cache_line.tag = tag
 
+        self.cache_lines[index] = cache_line
+
         # Write to cache.
         self.write(address)
 
@@ -157,10 +159,12 @@ class Cache:
 
         # Change state, becomes SHARED.
         if self.verbose:
-            print("Local cache line state become S.")
+            print("Local cache line state becomes S.")
         cache_line = self.cache_lines[index]
-        cache_line.set_state(CacheState.SHARED)
-        cache_line.set_tag(tag)
+        cache_line.state = CacheState.SHARED
+        cache_line.tag = tag
+
+        self.cache_lines[index] = cache_line
 
         # Read from cache.
         self.read(address)

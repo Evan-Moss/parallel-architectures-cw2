@@ -102,7 +102,7 @@ class Stats:
 
         if to_file:
             outname = 'out_{}'.format(filename)
-            outpath = path.join('./out_files', outname)
+            outpath = path.join('./out-files', outname)
             with open(outpath, 'w') as f:
                 f.write(st)
             print("File {} written with these stats:\n".format(outpath))

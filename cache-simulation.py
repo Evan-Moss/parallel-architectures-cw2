@@ -19,9 +19,11 @@ def parse_line(l):
 
 
 def print_caches(cs):
+    print('Idx, Tag, State')
     for k, c in cs.items():
         print('----{0}----\n'.format(k))
         print(c)
+    print('==========\n')
 
 
 class Simulator:
@@ -57,6 +59,7 @@ class Simulator:
                         c.verbose = not c.verbose
                 elif action == 'p':
                     # Complete content of cache should be output in some suitable format
+                    print("\nCACHE TABLES:\n")
                     print_caches(self.caches)
                 elif action == 'h':
                     print("HIT RATE: {}".format(self.stats.hit_rate()))

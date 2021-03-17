@@ -1,14 +1,22 @@
 v
+P0 W 1
+p
 P1 W 1
 p
 P2 W 1
 p
-P3 W 1
+P3 R 1
 p
-h
-P3 W 1
-h
+P0 R 2049
+p
+P1 R 2049
+p
+P2 R 2049
 p
 P3 R 2049
+p
 P3 W 2049
-v
+p
+P3 R 0
+P3 Wc 0
+p

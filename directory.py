@@ -65,12 +65,14 @@ class Directory:
             # Find closest P and ask it to send the data
 
             closest = self.closest_p(sharer_vector, p_num)
+
             if closest != -1:
+                # Only do this if there is a closest sharer.
                 self.stats.hop_between_processor_and_directory()
                 shared_processors = [i for i, v in enumerate(sharer_vector) if v == 1]
 
                 # Closest processor probes and accesses its cache TO CHECK TAG
-                closest_tag, closest_state = self.connected_caches[closest].calculate_cache_line(index)
+                closest_tag, closest_state = self.connected_caches[closest].get_cache_line(index)
 
             if closest == -1:
                 if self.verbose:
@@ -81,11 +83,14 @@ class Directory:
                 if self.verbose:
                     print("Closest cache-line P{} tag doesn't match. "
                           "Must invalidate all other cache lines.".format(closest))
+                self.stats.hop_between_processor_and_directory()
                 for s in shared_processors:
                     self.invalidate_processor(s, index)
                     sharer_vector[s] = 0
                 self.update_cache_line(index, CacheState.INVALID, sharer_vector)
             else:
+                if self.verbose:
+                    print("There are sharers. Closest is at P{} with state {}.".format(closest, closest_state))
                 # Otherwise there is a sharer.
                 # Send data, find distance between processors and hop between
                 # Access cache to forward line
@@ -96,13 +101,17 @@ class Directory:
 
                 # If modified, must become shared
                 if line_state == CacheState.MODIFIED:
+                    if self.verbose:
+                        print("COHERENCE WRITE-BACK: Cache line was in M state, and has been changed to S state.")
                     self.connected_caches[closest].cache_lines[index].state = CacheState.SHARED
                     self.stats.coherence_writebacks += 1
                     # TODO: is this coherence or replacement
 
-                # Update sharer vector. Stays in shared state.
+                # Update sharer vector. In shared state.
                 sharer_vector[p_num] = 1
                 self.update_cache_line(index, CacheState.SHARED, sharer_vector)
+                if self.verbose:
+                    print("Updated cache line has state {} and sharer vector {}".format(CacheState.SHARED, sharer_vector))
                 return
         # Otherwise
         # There are no sharers, you must contact memory.
@@ -153,7 +162,7 @@ class Directory:
                 return
             # Closest processor probes and accesses its cache TO CHECK TAG
             self.stats.hop_between_processor_and_directory()
-            closest_tag, closest_state = self.connected_caches[closest].calculate_cache_line(index)
+            closest_tag, closest_state = self.connected_caches[closest].get_cache_line(index)
 
             if closest_tag != tag:
                 # if in modified it will be written back in the cache class TODO: latency (?)
