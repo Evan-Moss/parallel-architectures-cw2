@@ -88,8 +88,7 @@ class Stats:
         private_access_latency = (sum(self.cycle_dict[AccessType.PRIVATE]) / private_accesses) if private_accesses > 0 else 0
         remote_access_latency = (sum(self.cycle_dict[AccessType.REMOTE]) / remote_accesses) if remote_accesses > 0 else 0
         off_chip_access_latency = (sum(self.cycle_dict[AccessType.OFF_CHIP]) / off_chip_accesses) if off_chip_accesses > 0 else 0
-        total_latency = sum(self.cycle_dict[AccessType.PRIVATE]) + sum(self.cycle_dict[AccessType.REMOTE]) + \
-                        sum(self.cycle_dict[AccessType.OFF_CHIP])
+        total_latency = sum(self.cycle_dict[AccessType.PRIVATE]) + sum(self.cycle_dict[AccessType.REMOTE]) + sum(self.cycle_dict[AccessType.OFF_CHIP])
         average_latency = total_latency / total_accesses
 
         st = "Private-accesses: {}\nRemote-accesses: {}\nOff-chip-accesses: {}\nTotal-accesses: {}" \

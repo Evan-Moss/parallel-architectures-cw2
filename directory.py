@@ -3,11 +3,9 @@ from stats import AccessType
 
 
 class Directory:
-    # Class to represent the Directory, which keeps track of the cache lines in each processor.
-    # The directory fetches from memory
     def __init__(self, no_cache_blocks, no_processors, stats, verbose=False):
         # Sets up the directory, each line holds the line state and the sharer vector.
-        self.lines = [[[CacheLine() for i in range(no_processors)], [0 for i in range(no_processors)]] for x in range(no_cache_blocks)]
+        self.lines = [[CacheLine() for i in range(no_processors)] for x in range(no_cache_blocks)]
         self.stats = stats
         self.connected_caches = []
         self.verbose = verbose
@@ -15,40 +13,42 @@ class Directory:
     def connect_cache(self, cache):
         self.connected_caches.append(cache)
 
-    def closest_p(self, sharer_vector, p_num):
+    def closest_sharer(self, sharers, p_num):
         # Finds the closest processor in the sharer_vector where the sharing bit is set to true. TODO: And not current p
-        sharing_ps = [i for i, v in enumerate(sharer_vector) if v == 1 and i != p_num]
-        closest = max([p for p in sharing_ps if p < p_num], default=-1)
-        if closest == -1:
-            closest = max(sharing_ps, default=-1)
-        return closest
+        dists = []
+        for s in sharers:
+            dists.append(self.distance_between_processors(p_num, s))
 
-    def furthest_p(self, sharer_vector, p_num):
+        return sharers[min(range(len(dists)), key=lambda x: dists[x])]
+
+    def furthest_sharer(self, sharers, p_num):
         # Finds the furthest processor in the sharer_vector where the sharing bit is set to true.
-        sharing_ps = [i for i, v in enumerate(sharer_vector) if v == 1 and i != p_num]
-        dist = 0
-        furthest = -1
-        for p in sharing_ps:
-            if self.distance_between_processors(p_num, p) > dist:
-                dist = self.distance_between_processors(p_num, p)
-                furthest = p
+        dists = []
+        for s in sharers:
+            dists.append(self.distance_between_processors(p_num, s))
 
-        return furthest
+        return sharers[max(range(len(dists)), key=lambda x: dists[x])]
+
+    def print_lines(self, index):
+        print("Lines {}".format(['P{}: {}'.format(i, str(l)) for i, l in enumerate(self.lines[index]) if l.tag is not None]))
 
     def distance_between_processors(self, requester, forwarder):
         distance = (4 + (requester - forwarder)) % 4
         return distance
 
-    def cache_line_and_vector(self, index):
+    def cache_lines_from_index(self, index):
         self.stats.directory_access()
-        line = self.lines[index]
-        cache_line = line[0]
-        sharer_vector = line[1]
-        return cache_line, sharer_vector
+        return self.lines[index]
 
-    def update_cache_line(self, index, state, sharer_vector_state):
-        self.lines[index][0].state = state
-        self.lines[index][1] = sharer_vector_state
+    def get_sharers(self, lines, tag, p_num):
+        sharers = []
+        for i, line in enumerate(lines):
+            if line.tag == tag and i != p_num:
+                sharers.append(i)
+        return sharers
+
+    def update_cache_lines(self, index, lines):
+        self.lines[index] == lines
 
     def invalidate_processor(self, p, index):
         self.stats.invalidations_sent += 1
@@ -58,173 +58,141 @@ class Directory:
         self.stats.access_type = AccessType.REMOTE
         self.stats.hop_between_processor_and_directory()
 
-        line, sharer_vector = self.cache_line_and_vector(index)
-        print(line)
-        line_state = line.state
+        lines = self.cache_lines_from_index(index)
         if self.verbose:
-            print("Line state: {}. Sharer vector: {}.".format(line_state, sharer_vector))
+            self.print_lines(index)
 
-        if line_state == CacheState.SHARED or line_state == CacheState.MODIFIED:
-            # Find closest P and ask it to send the data
+        sharers = self.get_sharers(lines, tag, p_num)
 
-            closest = self.closest_p(sharer_vector, p_num)
+        # Their are either 1-3 sharers in S or one in M, either way we just want to forward from closest sharer
+        if len(sharers) > 0:
 
-            if closest != -1:
-                # Only do this if there is a closest sharer.
-                self.stats.hop_between_processor_and_directory()
-                shared_processors = [i for i, v in enumerate(sharer_vector) if v == 1]
+            if self.verbose:
+                print("Sharers: {}.".format(sharers))
 
-                # Closest processor probes and accesses its cache TO CHECK TAG
-                closest_tag, closest_state = self.connected_caches[closest].get_cache_line(index)
+            closest = self.closest_sharer(sharers, p_num)
 
-            if closest == -1:
+            if self.verbose:
+                print("Closest sharer at P{}.".format(closest))
+
+            # Send message to closest sharer to send data
+            if self.verbose:
+                print("Send message to closest sharer to forward the data.")
+
+            self.stats.hop_between_processor_and_directory()
+
+            # Access cache to forward line
+            if self.verbose:
+                print("Closest sharer accesses data to send.")
+
+            self.stats.cache_probe()
+            self.stats.cache_access()
+
+            distance = self.distance_between_processors(p_num, closest)
+            for i in range(distance):
+                self.stats.hop_between_processors()
+
+            if lines[closest].state == CacheState.MODIFIED:
+                # Must become shared, causes a coherence write-back
                 if self.verbose:
-                    print("No Sharers.")
-                pass
-            elif closest_tag != tag:
-                # if in modified it will be written back in the cache class TODO: latency (?)
-                if self.verbose:
-                    print("Closest cache-line P{} tag doesn't match. "
-                          "Must invalidate all other cache lines.".format(closest))
-                self.stats.hop_between_processor_and_directory()
-                for s in shared_processors:
-                    self.invalidate_processor(s, index)
-                    sharer_vector[s] = 0
-                self.update_cache_line(index, CacheState.INVALID, sharer_vector)
-            else:
-                if self.verbose:
-                    print("There are sharers. Closest is at P{} with state {}.".format(closest, closest_state))
-                # Otherwise there is a sharer.
-                # Send data, find distance between processors and hop between
-                # Access cache to forward line
-                self.stats.cache_access()
-                distance = self.distance_between_processors(p_num, closest)
-                for i in range(distance):
-                    self.stats.hop_between_processors()
+                    print("COHERENCE WRITE-BACK: Cache line was in M state, and has been changed to S state.")
+                self.connected_caches[closest].cache_lines[index].state = CacheState.SHARED
+                self.stats.coherence_writebacks += 1
 
-                # If modified, must become shared
-                if line_state == CacheState.MODIFIED:
-                    if self.verbose:
-                        print("COHERENCE WRITE-BACK: Cache line was in M state, and has been changed to S state.")
-                    self.connected_caches[closest].cache_lines[index].state = CacheState.SHARED
-                    self.stats.coherence_writebacks += 1
-                    # TODO: is this coherence or replacement
+                # Update directory lines for sharer
+                lines[closest] = CacheLine(CacheState.SHARED, tag)
 
-                # Update sharer vector. In shared state.
-                sharer_vector[p_num] = 1
-                self.update_cache_line(index, CacheState.SHARED, sharer_vector)
-                if self.verbose:
-                    print("Updated cache line has state {} and sharer vector {}".format(CacheState.SHARED, sharer_vector))
-                return
-        # Otherwise
-        # There are no sharers, you must contact memory.
+        elif len(sharers) == 0:
+            if self.verbose:
+                print("There are no sharers, must fetch the data from memory.")
+            self.stats.memory_access_latency()
+            self.stats.access_type = AccessType.OFF_CHIP
+            self.stats.hop_between_processor_and_directory()
+
+        # Update directory line
+        lines[p_num] = CacheLine(CacheState.SHARED, tag)
+
         if self.verbose:
-            print("There are no sharers, must fetch the data from memory.")
-        self.stats.memory_access_latency()
-        self.stats.access_type = AccessType.OFF_CHIP
+            self.print_lines(index)
 
-        # Update Directory state
-        sharer_vector[p_num] = 1
-        self.update_cache_line(index, CacheState.SHARED, sharer_vector)
-        if self.verbose:
-            print("Updated cache line has state {} and sharer vector {}.".format(CacheState.SHARED, sharer_vector))
-        # Send back to processor
-        self.stats.hop_between_processor_and_directory()
+        self.update_cache_lines(index, lines)
         return
 
     def write_miss(self, index, tag, p_num):
-        # If P1 write miss: Send invalidates to all sharers, communicate the number of sharers to P1, sharers send
-        # acknowledgements directly to P1. If P1 was in I state, the data must be forwarded by a sharer, or from memory
-        # Once P1 has received all acknowledgements it can perform its write.
+        self.stats.access_type = AccessType.REMOTE
         self.stats.hop_between_processor_and_directory()
 
-        self.stats.access_type = AccessType.REMOTE
+        lines = self.cache_lines_from_index(index)
+        local_state = lines[p_num].state
+        local_tag = lines[p_num].tag
 
-        line, sharer_vector = self.cache_line_and_vector(index)
-        print(line)
-        line_state = line.state
-
-        num_other_sharers = sum(sharer_vector) - (sharer_vector[p_num])
-
-        forward = True
+        sharers = self.get_sharers(lines, tag, p_num)
 
         if self.verbose:
-            print("Line state: {}. Sharer vector: {}.".format(line_state, sharer_vector))
+            self.print_lines(index)
 
-        if line_state == CacheState.SHARED or line_state == CacheState.MODIFIED:
+        if len(sharers) > 0:
+            # There are sharers in either S or M, they must all be invalidated
+            # Access cache to forward line
+
             if self.verbose:
-                print("Must invalidate all other sharers.")
-            # Need to invalidate all other copies.
+                print("Sharers: {}.".format(sharers))
 
-            closest = self.closest_p(sharer_vector, p_num)
-            shared_processors = [i for i, v in enumerate(sharer_vector) if v == 1 and i != p_num]
-            # If there are no sharers
-            if num_other_sharers == 0:
-                if self.verbose:
-                    print("There are no sharers, cache is free to just write.")
-                # There are no sharers so you can just write
-                self.stats.hop_between_processor_and_directory()
-                return
-            # Closest processor probes and accesses its cache TO CHECK TAG
+            closest = self.closest_sharer(sharers, p_num)
+            furthest = self.furthest_sharer(sharers, p_num)
+
+            if self.verbose:
+                print("Closest sharer at P{}.".format(closest))
+
+            # Send message to closest sharer to invalidate the line (and forward the data)
+            if self.verbose:
+                print("Send message to closest sharer to invalidate the data.")
             self.stats.hop_between_processor_and_directory()
-            closest_tag, closest_state = self.connected_caches[closest].get_cache_line(index)
+            self.stats.cache_probe()
+            #self.stats.cache_access()
 
-            if closest_tag != tag:
-                # if in modified it will be written back in the cache class TODO: latency (?)
-                if self.verbose:
-                    print("Tag of closest sharer doesn't match. Can't forward the data.")
-                forward = False
-
-            # Send message to invalidate the line (the invalidation requests overlap), if in invalid state, closest
-            # also forwards the data
-            local_state = CacheState.INVALID if sharer_vector[p_num] == 0 else CacheState.SHARED
-            shared_processors = [i for i, v in enumerate(sharer_vector) if v == 1]
-            closest_processor = self.closest_p(sharer_vector, p_num)
-            furthest_processor = self.furthest_p(sharer_vector, p_num)
-
-            # Send invalidate requests
-            # These all overlap in time so we only need to calculate stats for 1 TODO: (?)
-            for p in shared_processors:
-                if p == closest_processor and local_state == CacheState.INVALID and forward is True:
-                    # Also forward data, only measure latency if there is one sharer
+            for s in sharers:
+                # TODO: Change to local
+                self.invalidate_processor(s, index)
+                if s == closest and local_state == CacheState.INVALID:
                     if self.verbose:
-                        print("Forward data from P{}.".format(closest_processor))
-                    if num_other_sharers == 1:
+                        print("Forward data from P{} since local state was I.".format(s))
+                    if len(sharers) == 1:
                         self.stats.cache_access()
-                self.invalidate_processor(p, index)
 
-            # Send requesting processor how many acknowledgements to expect.
-            # TODO: Does this have to be simulated?
-
-            # Send acknowledgment from furthest processor.
+            # Send requester how many acknowledgements to expect. Currently not simulated.
             if self.verbose:
-                print("Send acknowledgement from other sharers.".format(closest_processor))
-            dist = self.distance_between_processors(p_num, furthest_processor)
+                print("Send P{} how many acknowledgements to expect.".format(p_num))
+
+            if self.verbose:
+                print("Send acknowledgement from other sharers.")
+
+            dist = self.distance_between_processors(p_num, furthest)
+
             for i in range(dist):
                 self.stats.hop_between_processors()
-            # Now all processors have sent their acknowledgement, it can perform its write.
 
-            # Update sharer vector and state
-            for s in shared_processors:
-                sharer_vector[s] = 0
-            sharer_vector[p_num] = 1
+        elif len(sharers) == 0 and local_state == CacheState.SHARED and local_tag == tag:
+            # There are no sharers, you can just write
             if self.verbose:
-                print("Cache line state becomes {} and sharer vector is {}.".format(CacheState.MODIFIED, sharer_vector))
-            self.update_cache_line(index, CacheState.MODIFIED, sharer_vector)
+                print("There are no sharers, cache is free to just write.")
+            self.stats.hop_between_processor_and_directory()
 
-            return
-        # Otherwise there are no sharers.
+        else:
+            # This is if there were no sharers in the first place, and the cache line was invalid
+            if self.verbose:
+                print("No sharers, must contact memory.")
+            self.stats.memory_access_latency()
+            self.stats.access_type = AccessType.OFF_CHIP
+            self.stats.hop_between_processor_and_directory()
+
+        # Update directory sharers
+        lines[p_num] = CacheLine(CacheState.MODIFIED, tag)
+
+        for s in sharers:
+            lines[s] = CacheLine(CacheState.INVALID, None)
         if self.verbose:
-            print("No sharers, must contact memory.")
-        self.stats.memory_access_latency()
-        self.stats.access_type = AccessType.OFF_CHIP
+            self.print_lines(index)
 
-        # Update Directory state
-        sharer_vector[p_num] = 1
-        self.update_cache_line(index, CacheState.MODIFIED, sharer_vector)
-        if self.verbose:
-            print("Cache line state becomes {} and sharer vector is {}.".format(CacheState.MODIFIED, sharer_vector))
-
-        # Send back to processor
-        self.stats.hop_between_processor_and_directory()
+        self.update_cache_lines(index, lines)
         return

@@ -1,6 +1,6 @@
 from cache import Cache, CacheState, CacheLine
 from stats import Stats
-from new_directory import Directory
+from directory import Directory
 
 
 class TestClass:

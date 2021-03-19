@@ -1,9 +1,22 @@
-v
+P2 R 0
 P3 R 0
-p
-P2 R 2048
-p
 P1 R 0
 p
-P0 R 0
+P0 W 0
 p
+P1 W 0
+v
+P2 R 0
+v
+P2 W 0
+v
+P2 R 2048
+v
+P2 R 0
+P3 R 0
+P1 W 10
+P2 R 23
+P2 R 22
+P0 W 30
+p
+h

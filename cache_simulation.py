@@ -1,6 +1,8 @@
 from cache import Cache
-from stats import Stats, AccessType
-from new_directory import Directory
+from stats import Stats
+from directory import Directory
+from mesi_directory import MESIDirectory
+from mesi_cache import MESICache
 from os import path
 import sys
 
@@ -27,18 +29,25 @@ def print_caches(cs):
 
 
 class Simulator:
-    def __init__(self, no_processors=4, block_size=4, no_cache_blocks=512):
+    def __init__(self, no_processors=4, block_size=4, no_cache_blocks=512, optimisation=False):
+        self.optimisation = optimisation
         self.no_processors = no_processors
         self.block_size = block_size
         self.no_cache_blocks = no_cache_blocks
         self.stats = Stats()
-        self.directory = Directory(self.no_cache_blocks, self.no_processors, self.stats)
+        if self.optimisation:
+            self.directory = MESIDirectory(self.no_cache_blocks, self.no_processors, self.stats)
+        else:
+            self.directory = Directory(self.no_cache_blocks, self.no_processors, self.stats)
         self.caches = {}
         self.setup_caches()
 
     def setup_caches(self):
         for p in range(self.no_processors):
-            cache = Cache(p, self.block_size, self.no_cache_blocks, self.directory, self.stats)
+            if self.optimisation:
+                cache = MESICache(p, self.block_size, self.no_cache_blocks, self.directory, self.stats)
+            else:
+                cache = Cache(p, self.block_size, self.no_cache_blocks, self.directory, self.stats)
             self.caches['P{}'.format(p)] = cache
             self.directory.connect_cache(cache)
 
@@ -75,11 +84,30 @@ class Simulator:
 if __name__ == "__main__":
     args = sys.argv[1:]
 
+    optimisation = False
+
     if len(args) < 1:
-        print("You must input a file name for the trace as the first arg.")
+        print("You must input a file name for the trace as the first argument.")
+        exit(1)
+    elif len(args) == 1 and args[0].strip('-') == 'h':
+        print("./run_script.sh <FILENAME> <Optimisation Toggle>(optional)")
+        print("Use the filename placed in the 'cache-traces' directory that you would like to run, then use ONLY the "
+              "filename as the first argument. Optionally, you can enable the optimisation by passing 'o' as the second"
+              " argument.")
+    elif len(args) == 2:
+        if args[1] is not None and args[1].strip("\'-") == 'o':
+            optimisation = True
+        else:
+            print("If you would like to enable the optimisation, pass 'o' as the second argument.")
+            exit(1)
+    elif len(args) > 2:
+        print("Too many arguments.")
         exit(1)
 
     file = args[0]
 
-    s = Simulator()
+    cache_type = Cache
+    dir_type = Directory
+
+    s = Simulator(optimisation=optimisation)
     s.run_simulation(file)

@@ -1,43 +1,7 @@
-from enum import Enum
-
-class CacheState(Enum):
-    # Enumeration of MSI states to be used by each cache-line.
-
-    def __str__(self):
-        return self.name[0]
-
-    MODIFIED = 0
-    SHARED = 1
-    INVALID = 2
-    EXCLUSIVE = 3
+from cache import CacheLine, CacheState
 
 
-class CacheLine:
-    # Representation of a single CacheLine to be stored in cache of processor.
-    def __init__(self, state=CacheState.INVALID, tag=None):
-        self.state = state
-        self.tag = tag
-
-    def reset(self):
-        self.state = CacheState.INVALID
-        self.tag = None
-
-    def equals(self, cache_line):
-        if cache_line.state == self.state and cache_line.tag == self.tag:
-            return True
-        return False
-
-    def __str__(self):
-        return 'Tag: {}. State: {}.'.format(self.tag, self.state)
-
-    def set_state(self, state):
-        self.state = state
-
-    def set_tag(self, tag):
-        self.tag = tag
-
-
-class Cache:
+class MESICache:
     # Representation of Cache.
     # Cache is direct-mapped with a write-back policy.
     def __init__(self, p_num, block_size, no_blocks, directory, stats, verbose=False):
@@ -75,14 +39,17 @@ class Cache:
     def invalidate_line(self, index):
         # print("Invalidating line {} in processor {}".format(index, self.p_num))
         if self.cache_lines[index].state == CacheState.MODIFIED:
+            self.stats.coherence_writebacks += 1
             if self.verbose:
                 print("COHERENCE WRITE-BACK: Cache line was in M state, and has been invalidated.")
-            # TODO: Is the coherence or replacement
         self.cache_lines[index].state = CacheState.INVALID
         self.cache_lines[index].tag = None
         return
 
     def write(self, address):
+        # If in E state can just change to M
+        # if In M just write
+
         if self.verbose:
             print("P{} write to word {}.".format(self.p_num, address))
         index, tag = self.calculate_cache_line(address)
@@ -92,6 +59,17 @@ class Cache:
             # You can just write, state stays the same
             if self.verbose:
                 print("Cache line is in M state and tags match, the cache is free to write.")
+            self.stats.cache_access()
+            return
+
+        elif cache_line.state == CacheState.EXCLUSIVE and cache_line.tag == tag:
+            # You can just write, state stays the same
+            if self.verbose:
+                print("Cache line is in E state and tags match, the cache is free to write. E->M Transition.")
+
+            cache_line.state = CacheState.MODIFIED
+            self.cache_lines[index] = cache_line
+
             self.stats.cache_access()
             return
 
@@ -106,15 +84,18 @@ class Cache:
         if self.verbose:
             print("Write miss! Must contact the directory.")
         self.write_miss(index, tag, address)
+        return
 
     def read(self, address):
+        # If in E or S or M can just read, don't change state.
         if self.verbose:
             print("P{} reading to word {}.".format(self.p_num, address))
         index, tag = self.calculate_cache_line(address)
         cache_line = self.cache_lines[index]
 
-        # If in shared or modified state, you can read freely TODO: (?)
-        if (cache_line.state == CacheState.MODIFIED or cache_line.state == CacheState.SHARED) and cache_line.tag == tag:
+        # If in shared or modified or exclusive state, you can read freely.
+        if (cache_line.state == CacheState.MODIFIED or cache_line.state == CacheState.SHARED
+                or cache_line.state == CacheState.EXCLUSIVE) and cache_line.tag == tag:
             if self.verbose:
                 print("Cache state is {}, cache is free to read.".format(cache_line.state))
             # You can just read, state stays the same
@@ -139,13 +120,13 @@ class Cache:
             print("Read miss! Must contact the directory.")
         self.read_miss(index, tag, address)
 
-    def write_miss(self, index, tag, address):
+    def write_miss(self,  index, tag, address):
         cache_line = self.cache_lines[index]
 
         # Contact the directory, we want to invalidate other copies if shared.
         self.directory.write_miss(index, tag, self.p_num)
 
-        # Change state, will change to MODIFIED.
+        # Change state, will change to MODIFIED this is the same for either I or E.
         if self.verbose:
             print("Local cache line state becomes M.")
         cache_line.state = CacheState.MODIFIED
@@ -157,15 +138,16 @@ class Cache:
         self.write(address)
 
     def read_miss(self, index, tag, address):
-        # Contact the directory to receive the data, the cycles taken are calculated and added to the stats
-        # in the directory class.
-        self.directory.read_miss(index, tag, self.p_num)
+        # State is invalid, contact the directory and check if anyone else has got it, if they do get it and go to
+        # shared, if they don't fetch from memory and got to Exclusive state
 
-        # Change state, becomes SHARED.
+        state = self.directory.read_miss(index, tag, self.p_num)
+
+        # Change state, becomes SHARED or EXCLUSIVE.
         if self.verbose:
-            print("Local cache line state becomes S.")
+            print("Local cache line state becomes {}.".format(state))
         cache_line = self.cache_lines[index]
-        cache_line.state = CacheState.SHARED
+        cache_line.state = state
         cache_line.tag = tag
 
         self.cache_lines[index] = cache_line
